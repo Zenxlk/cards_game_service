@@ -112,7 +112,11 @@ existe.
 Pensado para arrancar simple en Cloud Run: una sola instancia
 (`min-instances=1 max-instances=1`), porque el estado de cada sala vive en
 memoria de un único proceso. El `Dockerfile` en [`deploy/`](deploy/Dockerfile)
-arma un binario estático sobre una imagen `distroless`. Detalle de la
+arma un binario estático sobre una imagen `distroless`. Cada Release publicado
+en GitHub se construye y sube automáticamente a
+`ghcr.io/zenxlk/cards-game-service` (ver
+[`.github/workflows/publish-image.yml`](.github/workflows/publish-image.yml)).
+Detalle de la
 decisión (por qué un solo proceso, cómo escalar más adelante) en
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#despliegue).
 
