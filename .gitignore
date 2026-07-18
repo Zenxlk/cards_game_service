@@ -1,0 +1,21 @@
+# Binarios compilados
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Cache y artefactos de Go
+/vendor/
+
+# Editores / SO
+.DS_Store
+.idea/
+*.swp
+
+# Variables de entorno locales (nunca commitear secretos)
+.env
+.env.local
+
+# Configuración local de Claude Code (no compartida)
+.claude/settings.local.json
