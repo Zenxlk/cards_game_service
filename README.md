@@ -1,11 +1,11 @@
 <div align="center">
 
-# cards-game-service
+# cards_game_service
 
 **Backend genérico en Go para juegos de cartas multijugador por WebSocket.**
 
-[![CI](https://github.com/ZenXLK/cards-game-service/actions/workflows/ci.yml/badge.svg)](https://github.com/ZenXLK/cards-game-service/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/ZenXLK/cards-game-service.svg)](https://pkg.go.dev/github.com/ZenXLK/cards-game-service)
+[![CI](https://github.com/ZenXLK/cards_game_service/actions/workflows/ci.yml/badge.svg)](https://github.com/ZenXLK/cards_game_service/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ZenXLK/cards_game_service.svg)](https://pkg.go.dev/github.com/ZenXLK/cards_game_service)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -102,7 +102,7 @@ reales (`test/integration/`).
 1. Creá un paquete en `games/<tu-juego>/` que implemente `engine.GameEngine`
    ([firma completa acá](pkg/engine/engine.go)).
 2. Registralo en un `init()`: `engine.Register("tu-juego", NewEngine)`.
-3. Importalo con blank import en `cmd/server/main.go` (`_ "github.com/ZenXLK/cards-game-service/games/tu-juego"`).
+3. Importalo con blank import en `cmd/server/main.go` (`_ "github.com/ZenXLK/cards_game_service/games/tu-juego"`).
 
 Nada más — `room`, `lobby` y `transport` no necesitan saber que tu juego
 existe.
@@ -114,7 +114,7 @@ Pensado para arrancar simple en Cloud Run: una sola instancia
 memoria de un único proceso. El `Dockerfile` en [`deploy/`](deploy/Dockerfile)
 arma un binario estático sobre una imagen `distroless`. Cada Release publicado
 en GitHub se construye y sube automáticamente a
-`ghcr.io/zenxlk/cards-game-service` (ver
+`ghcr.io/zenxlk/cards_game_service` (ver
 [`.github/workflows/publish-image.yml`](.github/workflows/publish-image.yml)).
 Detalle de la
 decisión (por qué un solo proceso, cómo escalar más adelante) en

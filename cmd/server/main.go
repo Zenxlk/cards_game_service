@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ZenXLK/cards-game-service/internal/config"
-	"github.com/ZenXLK/cards-game-service/internal/lobby"
-	"github.com/ZenXLK/cards-game-service/internal/room"
-	"github.com/ZenXLK/cards-game-service/internal/transport"
+	"github.com/ZenXLK/cards_game_service/internal/config"
+	"github.com/ZenXLK/cards_game_service/internal/lobby"
+	"github.com/ZenXLK/cards_game_service/internal/room"
+	"github.com/ZenXLK/cards_game_service/internal/transport"
 
-	_ "github.com/ZenXLK/cards-game-service/games/explodingkittens" // registra "exploding_kittens" en pkg/engine vía init()
+	_ "github.com/ZenXLK/cards_game_service/games/explodingkittens" // registra "exploding_kittens" en pkg/engine vía init()
 )
 
 func main() {
@@ -49,7 +49,7 @@ func main() {
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 
-	slog.Info("github.com/ZenXLK/cards-game-service escuchando", "addr", cfg.Addr)
+	slog.Info("github.com/ZenXLK/cards_game_service escuchando", "addr", cfg.Addr)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("el servidor terminó con error", "err", err)
 		os.Exit(1)

@@ -3,7 +3,7 @@ package room
 import (
 	"time"
 
-	"github.com/ZenXLK/cards-game-service/pkg/engine"
+	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 // timerSet centraliza los timers de UNA sala: uno por jugador desconectado

@@ -15,12 +15,12 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/ZenXLK/cards-game-service/internal/config"
-	"github.com/ZenXLK/cards-game-service/internal/lobby"
-	"github.com/ZenXLK/cards-game-service/internal/room"
-	"github.com/ZenXLK/cards-game-service/internal/transport"
+	"github.com/ZenXLK/cards_game_service/internal/config"
+	"github.com/ZenXLK/cards_game_service/internal/lobby"
+	"github.com/ZenXLK/cards_game_service/internal/room"
+	"github.com/ZenXLK/cards_game_service/internal/transport"
 
-	_ "github.com/ZenXLK/cards-game-service/games/fixture"
+	_ "github.com/ZenXLK/cards_game_service/games/fixture"
 )
 
 type client struct {

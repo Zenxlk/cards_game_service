@@ -1,6 +1,6 @@
 package explodingkittens
 
-import "github.com/ZenXLK/cards-game-service/pkg/engine"
+import "github.com/ZenXLK/cards_game_service/pkg/engine"
 
 // View es la proyección de State que efectivamente viaja por WebSocket — a
 // diferencia del GameState completo que el WsServer original broadcastea

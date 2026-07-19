@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/ZenXLK/cards-game-service/internal/room"
+	"github.com/ZenXLK/cards_game_service/internal/room"
 )
 
 // Discriminantes de WsMessage.type — deben calzar carácter por carácter con

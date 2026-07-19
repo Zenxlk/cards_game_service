@@ -1,6 +1,6 @@
 package explodingkittens
 
-import "github.com/ZenXLK/cards-game-service/pkg/engine"
+import "github.com/ZenXLK/cards_game_service/pkg/engine"
 
 // GamePhase : GamePhase en Dart (game_state.dart).
 type GamePhase string

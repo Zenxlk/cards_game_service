@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/ZenXLK/cards-game-service/pkg/engine"
+	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 func newEvent(t string, payload any, recipients []engine.PlayerID) engine.Event {

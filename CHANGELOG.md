@@ -36,5 +36,5 @@ punta a punta.
 - Tests unitarios del motor (RNG determinista, sin mocks) y un test de
   integración con servidor HTTP real + clientes WebSocket reales.
 
-[Unreleased]: https://github.com/ZenXLK/cards-game-service/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/ZenXLK/cards-game-service/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/ZenXLK/cards_game_service/releases/tag/v0.1.0

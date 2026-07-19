@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ZenXLK/cards-game-service/internal/room"
-	"github.com/ZenXLK/cards-game-service/pkg/engine"
+	"github.com/ZenXLK/cards_game_service/internal/room"
+	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // sin I/O/0/1: ambiguos al leerlos en voz alta

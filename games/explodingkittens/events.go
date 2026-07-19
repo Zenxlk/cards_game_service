@@ -1,6 +1,6 @@
 package explodingkittens
 
-import "github.com/ZenXLK/cards-game-service/pkg/engine"
+import "github.com/ZenXLK/cards_game_service/pkg/engine"
 
 // Tipos de evento : discriminante "type" de GameEvent en Dart (game_event.dart).
 const (

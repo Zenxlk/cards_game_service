@@ -35,7 +35,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/cards-game-service
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/cards_game_service
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

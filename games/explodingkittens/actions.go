@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/ZenXLK/cards-game-service/pkg/engine"
+	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 // ActionType : discriminante "type" de TurnAction en Dart (turn_action.dart).

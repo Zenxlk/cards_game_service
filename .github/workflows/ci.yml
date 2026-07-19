@@ -46,4 +46,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: build de la imagen (sin publicar)
-        run: docker build -f deploy/Dockerfile -t cards-game-service:ci .
+        run: docker build -f deploy/Dockerfile -t cards_game_service:ci .

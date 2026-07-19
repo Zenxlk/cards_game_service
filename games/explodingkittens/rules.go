@@ -3,7 +3,7 @@ package explodingkittens
 import (
 	"errors"
 
-	"github.com/ZenXLK/cards-game-service/pkg/engine"
+	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 // validateAction : GameRules.validate en Dart (rules/game_rules.dart).

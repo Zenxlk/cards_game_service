@@ -1,4 +1,4 @@
-module github.com/ZenXLK/cards-game-service
+module github.com/ZenXLK/cards_game_service
 
 go 1.24
 

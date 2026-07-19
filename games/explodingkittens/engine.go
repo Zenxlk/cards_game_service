@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ZenXLK/cards-game-service/pkg/engine"
+	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 // GameTypeName es el identificador con el que este motor se registra en

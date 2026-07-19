@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ZenXLK/cards-game-service/pkg/engine"
+	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 const GameTypeName = "fixture"
