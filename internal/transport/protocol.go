@@ -30,6 +30,7 @@ const (
 	TypePlayerReconnected = "player_reconnected"
 	TypeGameEvent         = "game_event"
 	TypeActionRejected    = "action_rejected"
+	TypeSessionToken      = "session_token"
 )
 
 // wireShape describe cómo se combinan el "type" y el resto de los campos de
