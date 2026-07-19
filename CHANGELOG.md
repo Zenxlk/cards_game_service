@@ -8,6 +8,16 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 Motor de reglas de Exploding Kittens: casos límite adicionales, más tests de
 integración de reconexión.
 
+## [0.1.1] - 2026-07-19
+
+### Corregido
+
+- Publicación de la imagen también en Docker Hub además de `ghcr.io`
+  (`.github/workflows/publish-image.yml`).
+- Nombre del módulo Go y todas las referencias (imports, CI, README,
+  CHANGELOG) corregidas de `cards-game-service` a `cards_game_service`,
+  igual que en GitHub y Docker Hub.
+
 ## [0.1.0] - 2026-07-18
 
 Primera versión del servidor: estructura completa, compilando y probada de
@@ -36,5 +46,6 @@ punta a punta.
 - Tests unitarios del motor (RNG determinista, sin mocks) y un test de
   integración con servidor HTTP real + clientes WebSocket reales.
 
-[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ZenXLK/cards_game_service/releases/tag/v0.1.0
