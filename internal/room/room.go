@@ -223,9 +223,13 @@ func (r *Room) dispatch(c *Conn, f Frame) {
 	}
 }
 
+// onJoin solo saca a c de r.pending cuando el join efectivamente tiene
+// éxito (justo antes de cada r.clients[playerID] = c). Si se rechaza
+// (token inválido, sala llena, partida ya empezada), c se queda en pending
+// — si se lo borrara antes de saber el resultado, una conexión rechazada
+// quedaría sin trackear en ningún lado (ni pending ni cliente), un limbo
+// del que nada la limpia ni le permite reintentar en un estado conocido.
 func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token string) {
-	delete(r.pending, c)
-
 	for _, p := range r.lobby {
 		if p.ID == playerID {
 			// Jugador ya conocido (host, o reconectando). Si ya se le
@@ -241,6 +245,7 @@ func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token stri
 				return
 			}
 
+			delete(r.pending, c)
 			r.clients[playerID] = c
 			r.sendTo(c, "room_state", r.snapshot())
 			r.onPlayerReconnected(playerID)
@@ -260,6 +265,7 @@ func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token stri
 	if !r.issueToken(c, playerID) {
 		return
 	}
+	delete(r.pending, c)
 	r.clients[playerID] = c
 	r.lobby = append(r.lobby, LobbyPlayer{ID: playerID, Name: name})
 	r.broadcastRoomState()
