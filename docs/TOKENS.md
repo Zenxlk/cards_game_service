@@ -8,8 +8,8 @@ interceptó su ID.
 
 No hay cuentas de usuario, contraseñas ni JWT firmado — cada **sala**
 (`internal/room.Room`) emite un secreto opaco por jugador, en memoria, que
-vive tanto como la sala misma. Es proporcional al resto del diseño: salas
-efímeras, un proceso, sin persistencia entre partidas.
+vive mientras el jugador siga en la sala (y, por ende, mientras la sala exista).
+Es proporcional al resto del diseño: salas efímeras, un proceso, sin persistencia entre partidas.
 
 **Primero en reclamar, gana:** la primera conexión física que manda
 `join_room` para un `playerId` que todavía no tiene token asignado en esa
