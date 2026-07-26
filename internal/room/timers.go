@@ -18,6 +18,7 @@ import (
 type timerSet struct {
 	reconnect map[engine.PlayerID]*time.Timer
 	reaction  *time.Timer
+	lobbyIdle *time.Timer
 }
 
 func newTimerSet() *timerSet {
@@ -56,11 +57,32 @@ func (t *timerSet) setReaction(d time.Duration, ok bool, onExpired func()) {
 	}
 }
 
+// setLobbyIdle arranca (una sola vez) el timer que cierra la sala si se
+// queda en fase waiting sin que nadie arranque la partida — tapa el caso de
+// salas creadas vía POST /rooms que nadie llega a usar. onIdle solo debe
+// actuar si la sala sigue en waiting cuando dispara (ver Room.onLobbyIdleExpired).
+func (t *timerSet) setLobbyIdle(d time.Duration, onIdle func()) {
+	t.lobbyIdle = time.AfterFunc(d, onIdle)
+}
+
+// cancelLobbyIdle se llama en cuanto la partida arranca: a partir de ahí el
+// ciclo de vida de la sala pasa a regirse por el grace period de reconexión
+// y el estado de la partida, no por inactividad del lobby.
+func (t *timerSet) cancelLobbyIdle() {
+	if t.lobbyIdle != nil {
+		t.lobbyIdle.Stop()
+		t.lobbyIdle = nil
+	}
+}
+
 func (t *timerSet) stopAll() {
 	for _, tm := range t.reconnect {
 		tm.Stop()
 	}
 	if t.reaction != nil {
 		t.reaction.Stop()
+	}
+	if t.lobbyIdle != nil {
+		t.lobbyIdle.Stop()
 	}
 }

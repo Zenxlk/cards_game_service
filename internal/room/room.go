@@ -8,11 +8,23 @@ package room
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/ZenXLK/cards_game_service/pkg/engine"
+)
+
+// MaxPlayerIDLen y MaxDisplayNameLen acotan lo que un cliente puede mandar
+// como playerId/name (join_room y POST /rooms) — sin esto, un cliente podía
+// mandar un string de hasta el límite del frame (64 KiB) que después se
+// reenvía por broadcast a todos los jugadores de la sala en cada room_state.
+const (
+	MaxPlayerIDLen    = 64
+	MaxDisplayNameLen = 40
 )
 
 // Frame es un mensaje de red ya despojado de su transporte concreto:
@@ -52,15 +64,20 @@ const (
 )
 
 type LobbySnapshot struct {
-	ID      string          `json:"id"`
-	HostID  engine.PlayerID `json:"hostId"`
-	Players []LobbyPlayer   `json:"players"`
-	Status  LobbyStatus     `json:"status"`
+	ID         string          `json:"id"`
+	HostID     engine.PlayerID `json:"hostId"`
+	Players    []LobbyPlayer   `json:"players"`
+	MaxPlayers int             `json:"maxPlayers"`
+	Status     LobbyStatus     `json:"status"`
 }
 
 type Config struct {
 	MaxPlayers    int
 	GraceDuration time.Duration
+
+	// LobbyIdleTimeout: cuánto puede vivir una sala en fase waiting sin que
+	// arranque la partida antes de cerrarse sola (ver onLobbyIdleExpired).
+	LobbyIdleTimeout time.Duration
 }
 
 type phase int
@@ -89,6 +106,7 @@ type Room struct {
 	state   engine.State
 	clients map[engine.PlayerID]*Conn
 	pending map[*Conn]bool
+	tokens  map[engine.PlayerID]string
 	timers  *timerSet
 
 	done chan struct{}
@@ -104,9 +122,22 @@ func New(id, gameType string, host engine.PlayerInfo, cfg Config) *Room {
 		lobby:    []LobbyPlayer{{ID: host.ID, Name: host.Name, IsHost: true, IsReady: true}},
 		clients:  make(map[engine.PlayerID]*Conn),
 		pending:  make(map[*Conn]bool),
+		tokens:   make(map[engine.PlayerID]string),
 		timers:   newTimerSet(),
 		done:     make(chan struct{}),
 	}
+}
+
+// generateToken produce un secreto de sesión opaco (192 bits, base64
+// URL-safe sin padding) — no es un JWT ni lleva claims, solo tiene que ser
+// impredecible y único por sala; su alcance y vida útil son los de la sala
+// misma (ver docs/TOKENS.md).
+func generateToken() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func (r *Room) ID() string            { return r.id }
@@ -126,17 +157,64 @@ func (r *Room) Run(ctx context.Context) {
 		r.timers.stopAll()
 		close(r.done)
 	}()
+
+	if r.cfg.LobbyIdleTimeout > 0 {
+		r.timers.setLobbyIdle(r.cfg.LobbyIdleTimeout, func() {
+			r.enqueue(func(r *Room) { r.onLobbyIdleExpired() })
+		})
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case fn := <-r.cmds:
-			fn(r)
+			r.safeExec(fn)
 			if r.phase == phaseFinished && len(r.clients) == 0 {
 				return
 			}
 		}
 	}
+}
+
+// safeExec corre un comando de sala protegido contra panics: el motor de un
+// juego es un plugin externo a este paquete y room no puede garantizar que
+// nunca tenga un bug (índice fuera de rango, mapa nil, etc.) — sin este
+// recover(), un panic en cualquier sala tira TODO el proceso (Go no aísla
+// goroutines), matando cada partida en curso en el servidor por un bug en
+// una sola sala. Con él, solo se pierde la sala afectada.
+func (r *Room) safeExec(fn func(*Room)) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("panic recuperado en goroutine de sala: se cierra la sala",
+				"room", r.id, "gameType", r.gameType, "panic", rec)
+			r.crashClose()
+		}
+	}()
+	fn(r)
+}
+
+// crashClose cierra la sala tras un panic recuperado: avisa a los clientes
+// conectados (mismo mensaje que usa onLeave cuando el host cierra la sala,
+// player_kicked, para que el cliente Flutter ya sepa manejarlo) y libera
+// todo, sin intentar seguir con un State que puede haber quedado a medio
+// mutar.
+func (r *Room) crashClose() {
+	r.broadcast("player_kicked", map[string]string{"reason": "Error interno del servidor, la sala se cerró"})
+	r.closeAll()
+}
+
+// onLobbyIdleExpired cierra salas creadas (vía POST /rooms) que nadie llegó
+// a usar: sin esto, spamear POST /rooms sin nunca abrir el WebSocket deja
+// goroutines y memoria vivos para siempre, porque Run() solo termina cuando
+// la fase es finished y no hay clientes — una fase que nunca llega sola si
+// no hay reloj que la fuerce.
+func (r *Room) onLobbyIdleExpired() {
+	if r.phase != phaseWaiting {
+		return
+	}
+	r.broadcast("player_kicked", map[string]string{"reason": "La sala se cerró por inactividad"})
+	r.closeAll()
 }
 
 // ── API pública: encolan un comando y devuelven de inmediato ───────────────
@@ -165,9 +243,10 @@ func (r *Room) dispatch(c *Conn, f Frame) {
 		var m struct {
 			PlayerID engine.PlayerID `json:"playerId"`
 			Name     string          `json:"name"`
+			Token    string          `json:"token,omitempty"`
 		}
 		if json.Unmarshal(f.Raw, &m) == nil {
-			r.onJoin(c, m.PlayerID, m.Name)
+			r.onJoin(c, m.PlayerID, m.Name, m.Token)
 		}
 	case "set_ready":
 		var m struct {
@@ -205,13 +284,34 @@ func (r *Room) dispatch(c *Conn, f Frame) {
 	}
 }
 
-func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string) {
-	delete(r.pending, c)
+// onJoin solo saca a c de r.pending cuando el join efectivamente tiene
+// éxito (justo antes de cada r.clients[playerID] = c). Si se rechaza
+// (token inválido, sala llena, partida ya empezada), c se queda en pending
+// — si se lo borrara antes de saber el resultado, una conexión rechazada
+// quedaría sin trackear en ningún lado (ni pending ni cliente), un limbo
+// del que nada la limpia ni le permite reintentar en un estado conocido.
+func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token string) {
+	if len(playerID) == 0 || len(playerID) > MaxPlayerIDLen || len(name) > MaxDisplayNameLen {
+		r.sendErrorTo(c, "playerId o name inválidos")
+		return
+	}
 
 	for _, p := range r.lobby {
 		if p.ID == playerID {
-			// Jugador ya conocido (host, o reconectando): solo actualizar
-			// la conexión asociada.
+			// Jugador ya conocido (host, o reconectando). Si ya se le
+			// había emitido un token, esta conexión tiene que probar que
+			// es él antes de heredar su lugar en la sala — si no, ni
+			// siquiera se registra en r.clients (ver docs/TOKENS.md).
+			if existing, issued := r.tokens[playerID]; issued {
+				if token == "" || token != existing {
+					r.sendErrorTo(c, "Token de sesión inválido")
+					return
+				}
+			} else if !r.issueToken(c, playerID) {
+				return
+			}
+
+			delete(r.pending, c)
 			r.clients[playerID] = c
 			r.sendTo(c, "room_state", r.snapshot())
 			r.onPlayerReconnected(playerID)
@@ -228,9 +328,28 @@ func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string) {
 		return
 	}
 
+	if !r.issueToken(c, playerID) {
+		return
+	}
+	delete(r.pending, c)
 	r.clients[playerID] = c
 	r.lobby = append(r.lobby, LobbyPlayer{ID: playerID, Name: name})
 	r.broadcastRoomState()
+}
+
+// issueToken genera y guarda el token de sesión de playerID (primera
+// conexión física que reclama esa identidad en la sala) y se lo manda solo
+// a c, nunca por broadcast. Devuelve false si no se pudo generar — en ese
+// caso ya le avisó el error a c y el caller no debe seguir el join.
+func (r *Room) issueToken(c *Conn, playerID engine.PlayerID) bool {
+	token, err := generateToken()
+	if err != nil {
+		r.sendErrorTo(c, "No se pudo iniciar la sesión")
+		return false
+	}
+	r.tokens[playerID] = token
+	r.sendTo(c, "session_token", map[string]string{"token": token})
+	return true
 }
 
 func (r *Room) onSetReady(c *Conn, ready bool) {
@@ -248,6 +367,7 @@ func (r *Room) onSetReady(c *Conn, ready bool) {
 
 func (r *Room) onLeave(playerID engine.PlayerID) {
 	delete(r.clients, playerID)
+	delete(r.tokens, playerID)
 
 	if playerID == r.hostID {
 		r.broadcast("player_kicked", map[string]string{"reason": "El host cerró la sala"})
@@ -303,6 +423,7 @@ func (r *Room) onStartGame(c *Conn) {
 	r.eng = eng
 	r.state = state
 	r.phase = phaseActive
+	r.timers.cancelLobbyIdle()
 	r.broadcast("game_starting", nil)
 	r.broadcastState()
 }
@@ -479,10 +600,11 @@ func (r *Room) snapshot() LobbySnapshot {
 		status = LobbyStarting
 	}
 	return LobbySnapshot{
-		ID:      r.id,
-		HostID:  r.hostID,
-		Players: append([]LobbyPlayer{}, r.lobby...),
-		Status:  status,
+		ID:         r.id,
+		HostID:     r.hostID,
+		Players:    append([]LobbyPlayer{}, r.lobby...),
+		MaxPlayers: r.cfg.MaxPlayers,
+		Status:     status,
 	}
 }
 

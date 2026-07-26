@@ -81,6 +81,14 @@ Del lado del cliente, la reconexión es responsabilidad suya: reintentar la
 conexión WebSocket con backoff exponencial y volver a mandar `join_room` con
 el mismo `playerId`.
 
+`join_room` con un `playerId` ya conocido no se acepta a ciegas: la
+primera conexión que reclama un `playerId` recibe un token de sesión
+opaco (`session_token`, dirigido, nunca por broadcast); cualquier
+`join_room` posterior para ese mismo `playerId` tiene que traer ese token
+o se rechaza, sin reemplazar al jugador legítimo. Detalle completo del
+contrato y del modelo de confianza ("primero en reclamar, gana") en
+[`docs/TOKENS.md`](TOKENS.md).
+
 ## Información oculta
 
 Un juego de cartas con manos privadas necesita que el servidor sea la
@@ -96,6 +104,25 @@ tráfico o modificar el cliente. Por eso:
   (`Recipients`) cuando exponen información que no todos deberían ver — por
   ejemplo, las cartas que reveló "Ver el futuro" solo van a quien jugó esa
   carta.
+
+## Robustez del goroutine de sala
+
+Dos garantías que no son obvias mirando `internal/room/room.go` en diagonal:
+
+- **Un panic en el motor de un juego no tira el servidor.** `Room.Run`
+  ejecuta cada comando encolado a través de `safeExec`, que envuelve la
+  llamada en un `recover()`. Sin esto, un bug en un motor concreto (índice
+  fuera de rango, mapa nil, lo que sea) mataría el proceso entero — Go no
+  aísla goroutines — con todas las salas activas del servidor, no solo la
+  afectada. Con `safeExec`, se pierde únicamente la sala donde ocurrió: se
+  avisa a los clientes (`player_kicked`) y se cierra.
+- **Una sala en lobby (`waiting`) no vive para siempre.** `LobbyIdleTimeout`
+  (`internal/room.Config`, 10 minutos por defecto en producción) cierra
+  automáticamente cualquier sala que nunca llega a arrancar partida — tapa
+  el caso de `POST /rooms` sin uso real, que de otro modo deja goroutines y
+  memoria vivos indefinidamente (nada más marca esa sala como `finished`).
+  El timer se cancela apenas la partida arranca (`onStartGame`); a partir
+  de ahí el ciclo de vida pasa a regirse por el grace period de reconexión.
 
 ## Despliegue
 

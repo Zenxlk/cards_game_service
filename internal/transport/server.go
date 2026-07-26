@@ -60,14 +60,25 @@ type createRoomResponse struct {
 	Code string `json:"code"`
 }
 
+// maxCreateRoomBody acota el body de POST /rooms — el payload esperado son
+// tres strings cortos; sin este límite, json.Decoder acepta un body de
+// cualquier tamaño (a diferencia del WebSocket, que ya tiene ReadLimit).
+const maxCreateRoomBody = 4 << 10 // 4 KiB
+
 func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCreateRoomBody)
+
 	var req createRoomRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "JSON inválido", http.StatusBadRequest)
+		http.Error(w, "JSON inválido o demasiado grande", http.StatusBadRequest)
 		return
 	}
 	if req.GameType == "" || req.HostID == "" {
 		http.Error(w, "gameType y hostId son obligatorios", http.StatusBadRequest)
+		return
+	}
+	if len(req.HostID) > room.MaxPlayerIDLen || len(req.HostName) > room.MaxDisplayNameLen {
+		http.Error(w, "hostId o hostName demasiado largos", http.StatusBadRequest)
 		return
 	}
 
