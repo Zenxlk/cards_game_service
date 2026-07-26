@@ -8,6 +8,18 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 Motor de reglas de Exploding Kittens: casos límite adicionales, más tests de
 integración de reconexión.
 
+### Agregado
+
+- `recover()` en el goroutine de cada sala (`Room.safeExec`): un panic en el
+  motor de un juego (bug propio, no input malicioso necesariamente) cierra
+  solo esa sala en vez de tirar todo el proceso con todas las partidas en
+  curso.
+- Salas en fase `waiting` (lobby, sin partida arrancada) se cierran solas
+  tras `LobbyIdleTimeout` (10 minutos por defecto) — sin esto, `POST /rooms`
+  sin uso real dejaba goroutines y memoria vivos para siempre.
+- Límite de tamaño (4 KiB) en el body de `POST /rooms` y validación de
+  longitud de `playerId`/`name` (`join_room` y `POST /rooms`).
+
 ## [0.1.1] - 2026-07-19
 
 ### Corregido
