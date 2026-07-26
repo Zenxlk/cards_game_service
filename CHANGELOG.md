@@ -5,8 +5,15 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
-Motor de reglas de Exploding Kittens: casos límite adicionales, más tests de
-integración de reconexión.
+Motor de reglas de Exploding Kittens: casos límite adicionales.
+
+### Corregido
+
+- Migro de `nhooyr.io/websocket` a `github.com/coder/websocket`: el autor
+  original transfirió el proyecto a Coder y marcó todo `nhooyr.io/websocket`
+  como deprecado en favor de ese fork, que es quien lo sigue manteniendo.
+  Mismo API, sin cambios de comportamiento — solo el import path y la
+  entrada en `go.mod`.
 
 ## [0.1.1] - 2026-07-19
 
