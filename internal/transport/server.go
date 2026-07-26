@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 
 	"github.com/ZenXLK/cards_game_service/internal/lobby"
 	"github.com/ZenXLK/cards_game_service/internal/room"
