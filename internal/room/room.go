@@ -291,6 +291,11 @@ func (r *Room) dispatch(c *Conn, f Frame) {
 // quedaría sin trackear en ningún lado (ni pending ni cliente), un limbo
 // del que nada la limpia ni le permite reintentar en un estado conocido.
 func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token string) {
+	if len(playerID) == 0 || len(playerID) > MaxPlayerIDLen || len(name) > MaxDisplayNameLen {
+		r.sendErrorTo(c, "playerId o name inválidos")
+		return
+	}
+
 	for _, p := range r.lobby {
 		if p.ID == playerID {
 			// Jugador ya conocido (host, o reconectando). Si ya se le
