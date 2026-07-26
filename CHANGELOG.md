@@ -5,8 +5,21 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
-Motor de reglas de Exploding Kittens: casos límite adicionales, más tests de
-integración de reconexión.
+Motor de reglas de Exploding Kittens: casos límite adicionales.
+
+### Agregado
+
+- Tokens de sesión para reconexión: la primera conexión que reclama un
+  `playerId` recibe un `session_token`; reconectar exige ese token o se
+  rechaza, evitando que otra conexión secuestre la identidad de un jugador
+  a mitad de partida. Detalle del contrato en
+  [`docs/TOKENS.md`](docs/TOKENS.md).
+
+### Corregido
+
+- `room_state` (`LobbySnapshot`) no incluía `maxPlayers` — el cliente
+  Flutter (`LobbyRoom.fromJson`) lo espera como `int` no-nullable, así que
+  el parseo fallaba en silencio contra el backend real.
 
 ## [0.1.1] - 2026-07-19
 

@@ -81,6 +81,14 @@ Del lado del cliente, la reconexión es responsabilidad suya: reintentar la
 conexión WebSocket con backoff exponencial y volver a mandar `join_room` con
 el mismo `playerId`.
 
+`join_room` con un `playerId` ya conocido no se acepta a ciegas: la
+primera conexión que reclama un `playerId` recibe un token de sesión
+opaco (`session_token`, dirigido, nunca por broadcast); cualquier
+`join_room` posterior para ese mismo `playerId` tiene que traer ese token
+o se rechaza, sin reemplazar al jugador legítimo. Detalle completo del
+contrato y del modelo de confianza ("primero en reclamar, gana") en
+[`docs/TOKENS.md`](TOKENS.md).
+
 ## Información oculta
 
 Un juego de cartas con manos privadas necesita que el servidor sea la
