@@ -126,6 +126,16 @@ type State struct {
 
 func (s State) Terminal() bool { return s.Phase == PhaseFinished }
 
+// Winner implementa engine.Winner: expone al ganador solo cuando la
+// partida terminó con uno (Result se completa en el mismo punto que pone
+// Phase en PhaseFinished, ver process.go).
+func (s State) Winner() (engine.PlayerID, bool) {
+	if s.Phase != PhaseFinished || s.Result == nil || s.Result.WinnerID == "" {
+		return "", false
+	}
+	return s.Result.WinnerID, true
+}
+
 func (s State) PlayerByID(id engine.PlayerID) (Player, bool) {
 	for _, p := range s.Players {
 		if p.ID == id {

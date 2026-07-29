@@ -54,6 +54,15 @@ type Terminal interface {
 	Terminal() bool
 }
 
+// Winner es una interfaz opcional que un State terminal puede implementar
+// para exponer quién ganó. El room solo la usa para persistencia externa
+// (historial de partidas, tops) — nunca para decidir su propia lógica de
+// fin de partida, eso sigue siendo Terminal. Un State que no la implemente
+// simplemente no deja ganador registrado.
+type Winner interface {
+	Winner() (id PlayerID, ok bool)
+}
+
 // GameEngine es el contrato de reglas puro que implementa cada juego
 // concreto. Ninguno de sus métodos hace I/O ni lanza goroutines: misma
 // entrada, misma salida, siempre — así son deterministas y testeables sin

@@ -3,19 +3,38 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 
+	"github.com/ZenXLK/cards_game_service/internal/auth"
 	"github.com/ZenXLK/cards_game_service/internal/lobby"
 	"github.com/ZenXLK/cards_game_service/internal/room"
+	"github.com/ZenXLK/cards_game_service/internal/store"
 	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
 type Config struct {
 	ReadLimit int64
+
+	// Store persiste eventos de auditoría de rechazos en POST /rooms (antes
+	// de que exista una sala, y por ende un room.Room con su propio
+	// cfg.Store) y sirve las lecturas de perfil/leaderboard. nil significa
+	// "sin persistencia configurada": el server funciona igual, esos
+	// endpoints devuelven 503 y el audit log de POST /rooms queda deshabilitado.
+	Store *store.Store
+
+	// Auth valida el JWT de Supabase en PATCH /players/{id}/nickname (el
+	// único endpoint HTTP, aparte de join_room, que necesita saber quién es
+	// el que llama). nil significa "sin Supabase configurado": el endpoint
+	// rechaza todo con 401.
+	Auth *auth.Verifier
 }
 
 func DefaultConfig() Config {
@@ -43,6 +62,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("POST /rooms", s.handleCreateRoom)
 	mux.HandleFunc("GET /ws/", s.handleWS)
+	mux.HandleFunc("GET /players/{id}", s.handleGetPlayer)
+	mux.HandleFunc("PATCH /players/{id}/nickname", s.handleUpdateNickname)
+	mux.HandleFunc("GET /leaderboard", s.handleLeaderboard)
 	return mux
 }
 
@@ -71,6 +93,7 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	var req createRoomRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "JSON inválido o demasiado grande", http.StatusBadRequest)
+		s.cfg.Store.RecordAuditEvent("", nil, "create_room_rejected_invalid_json", nil)
 		return
 	}
 	if req.GameType == "" || req.HostID == "" {
@@ -79,6 +102,7 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.HostID) > room.MaxPlayerIDLen || len(req.HostName) > room.MaxDisplayNameLen {
 		http.Error(w, "hostId o hostName demasiado largos", http.StatusBadRequest)
+		s.cfg.Store.RecordAuditEvent("", nil, "create_room_rejected_oversized_fields", nil)
 		return
 	}
 
@@ -167,4 +191,112 @@ func writePump(ctx context.Context, cancel context.CancelFunc, ws *websocket.Con
 			}
 		}
 	}
+}
+
+// maxProfileBody acota el body de PATCH /players/{id}/nickname — un único
+// string corto, mismo criterio que maxCreateRoomBody.
+const maxProfileBody = 4 << 10 // 4 KiB
+
+func (s *Server) handleGetPlayer(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	// players.id es uuid en Postgres — validar acá evita un error de sintaxis
+	// SQL genérico (500) para lo que en realidad es una request malformada (400).
+	if _, err := uuid.Parse(id); err != nil {
+		http.Error(w, "id inválido", http.StatusBadRequest)
+		return
+	}
+
+	profile, err := s.cfg.Store.GetPlayerProfile(r.Context(), id)
+	switch {
+	case errors.Is(err, store.ErrNotConfigured):
+		http.Error(w, "persistencia no configurada", http.StatusServiceUnavailable)
+		return
+	case errors.Is(err, store.ErrNotFound):
+		http.Error(w, "jugador no encontrado", http.StatusNotFound)
+		return
+	case err != nil:
+		slog.Error("handleGetPlayer: GetPlayerProfile falló", "err", err, "playerId", id)
+		http.Error(w, "error interno", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(profile)
+}
+
+type updateNicknameRequest struct {
+	Nickname string `json:"nickname"`
+}
+
+// handleUpdateNickname exige el propio JWT del jugador — nadie puede
+// cambiar el nickname de otro id, ni siquiera un invitado que adivine el
+// uuid: bearerToken tiene que validar contra Supabase y su "sub" tiene que
+// matchear exactamente el {id} de la ruta.
+func (s *Server) handleUpdateNickname(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	identity, err := s.cfg.Auth.Verify(bearerToken(r))
+	if err != nil || identity.PlayerID != id {
+		http.Error(w, "no autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxProfileBody)
+	var req updateNicknameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "JSON inválido o demasiado grande", http.StatusBadRequest)
+		return
+	}
+	if len(req.Nickname) == 0 || len(req.Nickname) > room.MaxDisplayNameLen {
+		http.Error(w, "nickname inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.cfg.Store.UpdateNickname(r.Context(), id, req.Nickname); err != nil {
+		if errors.Is(err, store.ErrNotConfigured) {
+			http.Error(w, "persistencia no configurada", http.StatusServiceUnavailable)
+			return
+		}
+		slog.Error("handleUpdateNickname: UpdateNickname falló", "err", err, "playerId", id)
+		http.Error(w, "no se pudo actualizar el nickname", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func bearerToken(r *http.Request) string {
+	const prefix = "Bearer "
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, prefix) {
+		return ""
+	}
+	return strings.TrimPrefix(h, prefix)
+}
+
+const (
+	defaultLeaderboardLimit = 20
+	maxLeaderboardLimit     = 100
+)
+
+func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	limit := defaultLeaderboardLimit
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 && n <= maxLeaderboardLimit {
+			limit = n
+		}
+	}
+
+	entries, err := s.cfg.Store.GetLeaderboard(r.Context(), limit)
+	if errors.Is(err, store.ErrNotConfigured) {
+		http.Error(w, "persistencia no configurada", http.StatusServiceUnavailable)
+		return
+	}
+	if err != nil {
+		slog.Error("handleLeaderboard: GetLeaderboard falló", "err", err, "limit", limit)
+		http.Error(w, "error interno", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entries)
 }
