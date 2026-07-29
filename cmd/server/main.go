@@ -25,6 +25,8 @@ import (
 )
 
 func main() {
+	slog.SetDefault(newLogger())
+
 	cfg := config.Default()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

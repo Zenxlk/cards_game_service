@@ -33,6 +33,11 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
   que habían abierto el WebSocket pero todavía no completaban `join_room`
   (`r.pending`) se quedaban sin ninguna señal, esperando una respuesta que
   nunca llegaba. Ahora también reciben un `ws_error` y su canal se cierra.
+- Logging pasa a JSON con clave `severity` (`cmd/server/logging.go`): el
+  handler de texto por default de `slog` no le llegaba con severidad
+  reconocible a Cloud Logging, así que ninguna alerta basada en
+  `severity>=ERROR` podía disparar por más que el proceso logueara bien
+  el error.
 
 Motor de reglas de Exploding Kittens: casos límite adicionales.
 
