@@ -5,6 +5,10 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+Motor de reglas de Exploding Kittens: casos límite adicionales.
+
+## [0.3.0] - 2026-07-29
+
 ### Agregado
 
 - Identidad de jugador persistente entre partidas vía Supabase Auth
@@ -38,8 +42,6 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
   reconocible a Cloud Logging, así que ninguna alerta basada en
   `severity>=ERROR` podía disparar por más que el proceso logueara bien
   el error.
-
-Motor de reglas de Exploding Kittens: casos límite adicionales.
 
 ## [0.2.0] - 2026-07-25
 
@@ -114,7 +116,8 @@ punta a punta.
 - Tests unitarios del motor (RNG determinista, sin mocks) y un test de
   integración con servidor HTTP real + clientes WebSocket reales.
 
-[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ZenXLK/cards_game_service/releases/tag/v0.1.0
