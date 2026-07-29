@@ -87,11 +87,23 @@ func (f *transportAuthFixture) sign(t *testing.T, sub string) string {
 
 func TestHandleGetPlayer_NoStoreConfigured_Returns503(t *testing.T) {
 	s := newTestServer(t, Config{})
-	req := httptest.NewRequest(http.MethodGet, "/players/some-id", nil)
+	// uuid válido: si no lo fuera, ganaría el 400 de formato antes de
+	// siquiera llegar a preguntarle al store si está configurado.
+	req := httptest.NewRequest(http.MethodGet, "/players/44444444-4444-4444-4444-444444444444", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("esperaba 503, dio %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandleGetPlayer_MalformedID_Returns400(t *testing.T) {
+	s := newTestServer(t, Config{})
+	req := httptest.NewRequest(http.MethodGet, "/players/no-es-un-uuid", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("esperaba 400 (id no es un uuid), dio %d: %s", rec.Code, rec.Body)
 	}
 }
 

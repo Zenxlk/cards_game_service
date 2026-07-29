@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 
 	"github.com/ZenXLK/cards_game_service/internal/auth"
 	"github.com/ZenXLK/cards_game_service/internal/lobby"
@@ -197,6 +199,12 @@ const maxProfileBody = 4 << 10 // 4 KiB
 
 func (s *Server) handleGetPlayer(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	// players.id es uuid en Postgres — validar acá evita un error de sintaxis
+	// SQL genérico (500) para lo que en realidad es una request malformada (400).
+	if _, err := uuid.Parse(id); err != nil {
+		http.Error(w, "id inválido", http.StatusBadRequest)
+		return
+	}
 
 	profile, err := s.cfg.Store.GetPlayerProfile(r.Context(), id)
 	switch {
@@ -207,6 +215,7 @@ func (s *Server) handleGetPlayer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "jugador no encontrado", http.StatusNotFound)
 		return
 	case err != nil:
+		slog.Error("handleGetPlayer: GetPlayerProfile falló", "err", err, "playerId", id)
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
@@ -248,6 +257,7 @@ func (s *Server) handleUpdateNickname(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "persistencia no configurada", http.StatusServiceUnavailable)
 			return
 		}
+		slog.Error("handleUpdateNickname: UpdateNickname falló", "err", err, "playerId", id)
 		http.Error(w, "no se pudo actualizar el nickname", http.StatusInternalServerError)
 		return
 	}
@@ -282,6 +292,7 @@ func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		slog.Error("handleLeaderboard: GetLeaderboard falló", "err", err, "limit", limit)
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
