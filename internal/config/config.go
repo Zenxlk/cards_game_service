@@ -24,6 +24,19 @@ type Config struct {
 	// goroutines y memoria vivos indefinidamente (no tiene equivalente en
 	// Dart: WsServer no existe hasta que alguien lo crea localmente).
 	LobbyIdleTimeout time.Duration
+
+	// SupabaseJWKSURL: URL del JWK Set de un proyecto Supabase
+	// (https://<project_ref>.supabase.co/auth/v1/.well-known/jwks.json),
+	// para validar el authToken opcional de join_room. Vacío (default)
+	// significa "sin Supabase configurado": el server funciona 100%
+	// invitado, igual que antes de esta feature.
+	SupabaseJWKSURL string
+
+	// DatabaseURL: connection string de Postgres (el de Supabase, o
+	// cualquier otro) para persistir identidad de jugadores, historial de
+	// partidas y auditoría. Vacío (default) significa "sin persistencia
+	// configurada": el server funciona igual, solo sin historial ni tops.
+	DatabaseURL string
 }
 
 func Default() Config {
@@ -37,5 +50,7 @@ func Default() Config {
 		RoomCodeLength:    6,
 		GraceDuration:     60 * time.Second,
 		LobbyIdleTimeout:  10 * time.Minute,
+		SupabaseJWKSURL:   os.Getenv("SUPABASE_JWKS_URL"),
+		DatabaseURL:       os.Getenv("DATABASE_URL"),
 	}
 }

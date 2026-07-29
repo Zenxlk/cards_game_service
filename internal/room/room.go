@@ -15,6 +15,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/ZenXLK/cards_game_service/internal/auth"
+	"github.com/ZenXLK/cards_game_service/internal/store"
 	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
@@ -78,6 +80,16 @@ type Config struct {
 	// LobbyIdleTimeout: cuánto puede vivir una sala en fase waiting sin que
 	// arranque la partida antes de cerrarse sola (ver onLobbyIdleExpired).
 	LobbyIdleTimeout time.Duration
+
+	// Auth valida el authToken opcional de join_room contra el JWKS de
+	// Supabase. nil significa "sin Supabase configurado": toda conexión se
+	// trata como invitada, igual que antes de esta feature.
+	Auth *auth.Verifier
+
+	// Store persiste identidad de jugadores, partidas y auditoría de forma
+	// asíncrona. nil significa "sin persistencia configurada": el server
+	// funciona igual, solo sin historial ni tops.
+	Store *store.Store
 }
 
 type phase int
@@ -109,22 +121,37 @@ type Room struct {
 	tokens  map[engine.PlayerID]string
 	timers  *timerSet
 
+	// authPlayers son los playerID de esta sala respaldados por un JWT de
+	// Supabase válido (cuenta real o anónima) — solo esos tienen fila en
+	// players y pueden persistirse en match_players/audit_events sin violar
+	// la FK. Los invitados sin JWT no aparecen acá.
+	authPlayers map[engine.PlayerID]bool
+
+	// matchID identifica la partida en Postgres (asignado en onStartGame,
+	// vacío mientras la sala está en lobby). matchFinalized evita que
+	// finalizeMatch escriba dos veces el cierre de la misma partida — puede
+	// llamarse tanto desde el camino normal (maybeFinish) como desde un
+	// cierre anómalo (crashClose tras un panic recuperado).
+	matchID        string
+	matchFinalized bool
+
 	done chan struct{}
 }
 
 func New(id, gameType string, host engine.PlayerInfo, cfg Config) *Room {
 	return &Room{
-		id:       id,
-		gameType: gameType,
-		hostID:   host.ID,
-		cfg:      cfg,
-		cmds:     make(chan func(*Room), 64),
-		lobby:    []LobbyPlayer{{ID: host.ID, Name: host.Name, IsHost: true, IsReady: true}},
-		clients:  make(map[engine.PlayerID]*Conn),
-		pending:  make(map[*Conn]bool),
-		tokens:   make(map[engine.PlayerID]string),
-		timers:   newTimerSet(),
-		done:     make(chan struct{}),
+		id:          id,
+		gameType:    gameType,
+		hostID:      host.ID,
+		cfg:         cfg,
+		cmds:        make(chan func(*Room), 64),
+		lobby:       []LobbyPlayer{{ID: host.ID, Name: host.Name, IsHost: true, IsReady: true}},
+		clients:     make(map[engine.PlayerID]*Conn),
+		pending:     make(map[*Conn]bool),
+		tokens:      make(map[engine.PlayerID]string),
+		authPlayers: make(map[engine.PlayerID]bool),
+		timers:      newTimerSet(),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -158,6 +185,9 @@ func (r *Room) Run(ctx context.Context) {
 		close(r.done)
 	}()
 
+	r.cfg.Store.RecordAuditEvent(r.id, nil, "room_created",
+		map[string]any{"gameType": r.gameType, "hostId": string(r.hostID)})
+
 	if r.cfg.LobbyIdleTimeout > 0 {
 		r.timers.setLobbyIdle(r.cfg.LobbyIdleTimeout, func() {
 			r.enqueue(func(r *Room) { r.onLobbyIdleExpired() })
@@ -188,6 +218,8 @@ func (r *Room) safeExec(fn func(*Room)) {
 		if rec := recover(); rec != nil {
 			slog.Error("panic recuperado en goroutine de sala: se cierra la sala",
 				"room", r.id, "gameType", r.gameType, "panic", rec)
+			r.cfg.Store.RecordAuditEvent(r.id, nil, "engine_panic_recovered",
+				map[string]any{"gameType": r.gameType, "panic": fmt.Sprint(rec)})
 			r.crashClose()
 		}
 	}()
@@ -201,6 +233,7 @@ func (r *Room) safeExec(fn func(*Room)) {
 // mutar.
 func (r *Room) crashClose() {
 	r.broadcast("player_kicked", map[string]string{"reason": "Error interno del servidor, la sala se cerró"})
+	r.finalizeMatch("abandoned")
 	r.closeAll()
 }
 
@@ -241,12 +274,13 @@ func (r *Room) dispatch(c *Conn, f Frame) {
 	switch f.Type {
 	case "join_room":
 		var m struct {
-			PlayerID engine.PlayerID `json:"playerId"`
-			Name     string          `json:"name"`
-			Token    string          `json:"token,omitempty"`
+			PlayerID  engine.PlayerID `json:"playerId"`
+			Name      string          `json:"name"`
+			Token     string          `json:"token,omitempty"`
+			AuthToken string          `json:"authToken,omitempty"`
 		}
 		if json.Unmarshal(f.Raw, &m) == nil {
-			r.onJoin(c, m.PlayerID, m.Name, m.Token)
+			r.onJoin(c, m.PlayerID, m.Name, m.Token, m.AuthToken)
 		}
 	case "set_ready":
 		var m struct {
@@ -290,9 +324,39 @@ func (r *Room) dispatch(c *Conn, f Frame) {
 // — si se lo borrara antes de saber el resultado, una conexión rechazada
 // quedaría sin trackear en ningún lado (ni pending ni cliente), un limbo
 // del que nada la limpia ni le permite reintentar en un estado conocido.
-func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token string) {
+//
+// Si authToken viene no vacío, se valida contra el JWKS de Supabase y, si
+// es válido, el playerID de esta conexión pasa a ser el "sub" del JWT —
+// se ignora lo que haya mandado el cliente en el campo playerId, para que
+// nadie pueda reclamar la identidad autenticada de otro sin tener su JWT.
+// Un authToken inválido rechaza el join entero (no degrada a invitado en
+// silencio); sin authToken, el comportamiento es exactamente el de antes.
+func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token string, authToken string) {
+	authenticated := false
+	if authToken != "" {
+		identity, err := r.cfg.Auth.Verify(authToken)
+		if err != nil {
+			r.sendErrorTo(c, "Token de autenticación inválido")
+			r.cfg.Store.RecordAuditEvent(r.id, nil, "join_rejected_invalid_auth_token", nil)
+			return
+		}
+		playerID = engine.PlayerID(identity.PlayerID)
+		authenticated = true
+		r.cfg.Store.UpsertPlayer(identity.PlayerID, identity.IsAnonymous)
+	}
+
+	// authRef identifica al autor de un evento de auditoría solo cuando está
+	// autenticado — audit_events.player_id tiene FK a players(id), así que
+	// un playerId de invitado ahí violaría la constraint a propósito.
+	var authRef *string
+	if authenticated {
+		s := string(playerID)
+		authRef = &s
+	}
+
 	if len(playerID) == 0 || len(playerID) > MaxPlayerIDLen || len(name) > MaxDisplayNameLen {
 		r.sendErrorTo(c, "playerId o name inválidos")
+		r.cfg.Store.RecordAuditEvent(r.id, authRef, "join_rejected_invalid_player_data", nil)
 		return
 	}
 
@@ -305,6 +369,7 @@ func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token stri
 			if existing, issued := r.tokens[playerID]; issued {
 				if token == "" || token != existing {
 					r.sendErrorTo(c, "Token de sesión inválido")
+					r.cfg.Store.RecordAuditEvent(r.id, authRef, "join_rejected_invalid_session_token", nil)
 					return
 				}
 			} else if !r.issueToken(c, playerID) {
@@ -313,6 +378,9 @@ func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token stri
 
 			delete(r.pending, c)
 			r.clients[playerID] = c
+			if authenticated {
+				r.authPlayers[playerID] = true
+			}
 			r.sendTo(c, "room_state", r.snapshot())
 			r.onPlayerReconnected(playerID)
 			return
@@ -321,10 +389,12 @@ func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token stri
 
 	if r.phase != phaseWaiting {
 		r.sendErrorTo(c, "La partida ya empezó")
+		r.cfg.Store.RecordAuditEvent(r.id, authRef, "join_rejected_game_started", nil)
 		return
 	}
 	if len(r.lobby) >= r.cfg.MaxPlayers {
 		r.sendErrorTo(c, "La sala está llena")
+		r.cfg.Store.RecordAuditEvent(r.id, authRef, "join_rejected_room_full", nil)
 		return
 	}
 
@@ -333,6 +403,9 @@ func (r *Room) onJoin(c *Conn, playerID engine.PlayerID, name string, token stri
 	}
 	delete(r.pending, c)
 	r.clients[playerID] = c
+	if authenticated {
+		r.authPlayers[playerID] = true
+	}
 	r.lobby = append(r.lobby, LobbyPlayer{ID: playerID, Name: name})
 	r.broadcastRoomState()
 }
@@ -424,6 +497,8 @@ func (r *Room) onStartGame(c *Conn) {
 	r.state = state
 	r.phase = phaseActive
 	r.timers.cancelLobbyIdle()
+	r.matchID = store.NewMatchID()
+	r.cfg.Store.RecordMatchStart(r.matchID, r.id, r.gameType)
 	r.broadcast("game_starting", nil)
 	r.broadcastState()
 }
@@ -547,7 +622,46 @@ func (r *Room) onReactionTimeout() {
 func (r *Room) maybeFinish() {
 	if term, ok := r.state.(engine.Terminal); ok && term.Terminal() {
 		r.phase = phaseFinished
+		r.finalizeMatch("finished")
 	}
+}
+
+// finalizeMatch persiste el cierre de una partida (ganador + participantes
+// autenticados) exactamente una vez — puede llamarse tanto desde el cierre
+// normal (maybeFinish, status "finished") como desde uno anómalo
+// (crashClose, status "abandoned"); el segundo llamado es un no-op.
+//
+// Solo se registran jugadores con fila en players (r.authPlayers): un
+// invitado sin JWT no tiene identidad persistente y, si se intentara
+// insertar su playerId arbitrario en match_players, violaría la FK a
+// players(id) a propósito.
+func (r *Room) finalizeMatch(status string) {
+	if r.matchID == "" || r.matchFinalized {
+		return
+	}
+	r.matchFinalized = true
+
+	var winnerPlayerID *string
+	if w, ok := r.state.(engine.Winner); ok {
+		if id, hasWinner := w.Winner(); hasWinner && r.authPlayers[id] {
+			s := string(id)
+			winnerPlayerID = &s
+		}
+	}
+
+	players := make([]store.MatchPlayerResult, 0, len(r.lobby))
+	for _, p := range r.lobby {
+		if !r.authPlayers[p.ID] {
+			continue
+		}
+		players = append(players, store.MatchPlayerResult{
+			PlayerID:    string(p.ID),
+			DisplayName: p.Name,
+			IsHost:      p.ID == r.hostID,
+		})
+	}
+
+	r.cfg.Store.RecordMatchEnd(r.matchID, status, winnerPlayerID, players)
 }
 
 // ── helpers de envío ─────────────────────────────────────────────────────

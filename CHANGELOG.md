@@ -5,6 +5,27 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Agregado
+
+- Identidad de jugador persistente entre partidas vía Supabase Auth
+  (cuenta real o Anonymous Sign-In), validada por JWT contra el JWKS del
+  proyecto (`authToken` opcional en `join_room`). Sin Supabase
+  configurado, el servidor sigue siendo 100% invitado, igual que antes.
+  Detalle completo en [`docs/PERSISTENCE.md`](docs/PERSISTENCE.md).
+- Persistencia asíncrona en Postgres (Supabase) de partidas, participantes
+  autenticados y eventos de auditoría de seguridad/lobby — nunca bloquea
+  el goroutine de una sala; si la escritura falla o la cola se llena, se
+  descarta y se loguea en vez de afectar la partida.
+- Endpoints `GET /players/{id}`, `GET /leaderboard` y
+  `PATCH /players/{id}/nickname`.
+- Configuración nueva, ambas opcionales: `SUPABASE_JWKS_URL` y
+  `DATABASE_URL`.
+
+### Cambiado
+
+- Go 1.24 → 1.25 (requerido por `jackc/pgx/v5`), CI y `deploy/Dockerfile`
+  actualizados.
+
 Motor de reglas de Exploding Kittens: casos límite adicionales.
 
 ## [0.2.0] - 2026-07-25

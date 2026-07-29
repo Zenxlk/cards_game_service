@@ -89,6 +89,18 @@ o se rechaza, sin reemplazar al jugador legítimo. Detalle completo del
 contrato y del modelo de confianza ("primero en reclamar, gana") en
 [`docs/TOKENS.md`](TOKENS.md).
 
+## Identidad y persistencia
+
+El token de sesión de arriba resuelve reconexión *dentro* de una sala.
+Por encima de eso, `join_room` acepta un `authToken` opcional (JWT de
+Supabase, validado contra su JWKS) que le da a un jugador una identidad
+*persistente entre partidas* — real o anónima (Supabase Anonymous
+Sign-In) — y habilita historial de partidas y tops en Postgres, con
+escritura siempre asíncrona respecto al goroutine de la sala. Ambas
+piezas (auth y persistencia) son opcionales: sin configurarlas, el
+servidor funciona igual que antes, 100% invitado y sin guardar nada.
+Contrato completo en [`docs/PERSISTENCE.md`](PERSISTENCE.md).
+
 ## Información oculta
 
 Un juego de cartas con manos privadas necesita que el servidor sea la
@@ -130,14 +142,24 @@ El estado de cada sala vive en memoria de un único proceso — no hay base de
 datos ni estado compartido entre instancias. Eso hace que escalar
 horizontalmente no sea gratis: si dos instancias del servidor corrieran en
 paralelo, las conexiones de una misma sala tendrían que llegar siempre a la
-instancia que la creó, y nada en el stack de Cloud Run garantiza eso hoy
-(su session affinity es por cliente, no por sala, y es best-effort).
+instancia que la creó, y ninguna plataforma serverless lo garantiza por
+default (la session affinity, cuando existe, suele ser por cliente, no
+por sala, y es best-effort).
 
-La decisión para arrancar: **una sola instancia** (`min-instances=1
-max-instances=1` en Cloud Run, o una única VM). Con una sola instancia el
-problema de afinidad no existe — todas las salas viven en el mismo proceso.
-Es la opción más simple y más barata para un proyecto que todavía no necesita
-escalar.
+La decisión para arrancar: **una sola instancia siempre viva**. Con una
+sola instancia el problema de afinidad no existe — todas las salas viven
+en el mismo proceso. Es la opción más simple y más barata para un
+proyecto que todavía no necesita escalar.
+
+"Siempre viva" importa más de lo que parece: los timers de
+`internal/room/timers.go` (grace period de reconexión, `LobbyIdleTimeout`,
+ventana de Nope) son `time.AfterFunc` reales — necesitan que el proceso
+esté corriendo para disparar, no alcanza con que responda cuando llega
+tráfico. Muchas plataformas serverless suspenden instancias sin tráfico
+por default (Cloud Run, Fly.io incluidos) — hay que desactivar
+explícitamente esa suspensión, cada plataforma con su propio mecanismo.
+Guía de configuración (Supabase + qué necesita cualquier plataforma) en
+[`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
 
 Si en algún momento hace falta más de una instancia, el camino sin rediseñar
 la aplicación es enrutar por código de sala con hashing consistente en una

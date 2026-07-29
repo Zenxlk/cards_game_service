@@ -109,15 +109,19 @@ existe.
 
 ## Despliegue
 
-Pensado para arrancar simple en Cloud Run: una sola instancia
-(`min-instances=1 max-instances=1`), porque el estado de cada sala vive en
-memoria de un único proceso. El `Dockerfile` en [`deploy/`](deploy/Dockerfile)
-arma un binario estático sobre una imagen `distroless`. Cada Release publicado
-en GitHub se construye y sube automáticamente a
-`ghcr.io/zenxlk/cards_game_service` (ver
+Pensado para correr como una sola instancia siempre viva (el estado de
+cada sala vive en memoria de un único proceso, y los timers de
+reconexión/lobby necesitan que el proceso no se suspenda por inactividad —
+la plataforma que elijas tiene que poder desactivar eso). El `Dockerfile`
+en [`deploy/`](deploy/Dockerfile) arma un binario estático sobre una
+imagen `distroless`. Cada Release publicado en GitHub se construye y sube
+automáticamente a `ghcr.io/zenxlk/cards_game_service` (ver
 [`.github/workflows/publish-image.yml`](.github/workflows/publish-image.yml)).
-Detalle de la
-decisión (por qué un solo proceso, cómo escalar más adelante) en
+
+Guía paso a paso para configurar Supabase (identidad + historial,
+opcional) y desplegar en [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+Detalle de la decisión de arquitectura (por qué un solo proceso, cómo
+escalar más adelante) en
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#despliegue).
 
 ## Contribuir
