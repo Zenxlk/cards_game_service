@@ -238,6 +238,58 @@ func TestOnLobbyIdleExpired_ClosesRoomWhenNoGameStarts(t *testing.T) {
 	}
 }
 
+// TestCloseAll_SendsErrorAndClosesChannelForPendingConn cubre el gap
+// identificado en el hardening: una conexión que abrió el WebSocket pero
+// nunca completó join_room (r.pending) tiene que recibir una señal cuando
+// la sala se cierra — antes de este fix, closeAll() solo cerraba
+// r.clients y una conexión pending se quedaba esperando una respuesta que
+// nunca llegaba.
+func TestCloseAll_SendsErrorAndClosesChannelForPendingConn(t *testing.T) {
+	host := engine.PlayerInfo{ID: "p1", Name: "Ana"}
+	r := New("ROOM11", "room_test_panicky", host, Config{MaxPlayers: 2})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go r.Run(ctx)
+
+	pendingConn := r.Connect() // nunca manda join_room
+
+	syncRoom(t, r, func(r *Room) {
+		if !r.pending[pendingConn] {
+			t.Fatal("esperaba que pendingConn estuviera en r.pending antes del cierre")
+		}
+	})
+
+	hostConn := r.Connect()
+	r.HandleMessage(hostConn, joinFrame("p1", "Ana"))
+	drainUntil(t, hostConn, "room_state")
+	// onLeave saca a hostConn de r.clients ANTES de emitir player_kicked
+	// (así que el propio host que se va nunca lo recibe) y dispara
+	// closeAll() porque playerID == hostID — no hace falta esperar nada en
+	// hostConn, alcanza con confirmar la señal en pendingConn.
+	r.HandleMessage(hostConn, Frame{Type: "leave_room", Raw: json.RawMessage(`{"playerId":"p1"}`)})
+
+	f := drainUntil(t, pendingConn, "ws_error")
+	var payload struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(f.Raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Message == "" {
+		t.Fatal("esperaba un mensaje de error para la conexión pending")
+	}
+
+	select {
+	case _, ok := <-pendingConn.Out():
+		if ok {
+			t.Fatal("esperaba que el canal de pendingConn se cerrara tras el ws_error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout esperando que se cerrara el canal de pendingConn")
+	}
+}
+
 func TestOnLobbyIdleExpired_DoesNothingIfGameAlreadyStarted(t *testing.T) {
 	host := engine.PlayerInfo{ID: "p1", Name: "Ana"}
 	r := New("ROOM2", "room_test_panicky", host, Config{MaxPlayers: 2, LobbyIdleTimeout: 20 * time.Millisecond})

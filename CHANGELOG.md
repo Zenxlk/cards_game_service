@@ -26,6 +26,14 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 - Go 1.24 → 1.25 (requerido por `jackc/pgx/v5`), CI y `deploy/Dockerfile`
   actualizados.
 
+### Corregido
+
+- `closeAll()` (cierre de sala: panic recuperado, `LobbyIdleTimeout`, o el
+  host se va) solo cerraba las conexiones ya unidas (`r.clients`) — las
+  que habían abierto el WebSocket pero todavía no completaban `join_room`
+  (`r.pending`) se quedaban sin ninguna señal, esperando una respuesta que
+  nunca llegaba. Ahora también reciben un `ws_error` y su canal se cierra.
+
 Motor de reglas de Exploding Kittens: casos límite adicionales.
 
 ## [0.2.0] - 2026-07-25

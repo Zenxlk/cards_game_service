@@ -766,10 +766,23 @@ func flattenEvent(ev engine.Event) json.RawMessage {
 	return out
 }
 
+// closeAll también cierra las conexiones en r.pending (abrieron el
+// WebSocket pero nunca completaron join_room): si no, cuando la sala se
+// cierra (crashClose, onLobbyIdleExpired, o el host se va) esas conexiones
+// quedan sin ninguna señal — cualquier mensaje que manden después se
+// descarta en silencio, porque r.enqueue ve r.done ya cerrado, y el
+// cliente se queda esperando una respuesta que nunca llega.
 func (r *Room) closeAll() {
 	for _, c := range r.clients {
 		close(c.out)
 	}
 	r.clients = make(map[engine.PlayerID]*Conn)
+
+	for c := range r.pending {
+		r.sendErrorTo(c, "La sala se cerró")
+		close(c.out)
+	}
+	r.pending = make(map[*Conn]bool)
+
 	r.phase = phaseFinished
 }
