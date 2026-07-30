@@ -21,12 +21,13 @@ CI corre exactamente esto — si pasa local, pasa en CI.
 - **Un juego nuevo es un paquete nuevo** bajo `games/`, que implementa
   `engine.GameEngine` y se registra con `engine.Register` en su propio
   `init()`. No debería necesitar tocar `room`, `lobby` ni `transport`.
-- **Sin rutas absolutas de tu máquina ni datos de un dispositivo/sesión
-  concreta** en nada que se commitee (docs, comentarios, ejemplos). Si un
-  ejemplo necesita una ruta, usar algo genérico (`/home/usuario/...`).
+- **Sin rutas absolutas de una máquina concreta ni datos de un
+  dispositivo/sesión concreta** en nada que se commitee (docs,
+  comentarios, ejemplos). Si un ejemplo necesita una ruta, usar algo
+  genérico (`/home/usuario/...`).
 
 ## Reportar un bug / proponer algo
 
-Abrí un issue. Si es un bug, ayuda mucho incluir cómo reproducirlo — para el
-motor de un juego, lo ideal es un test que falle (el motor es una función
-pura, no debería hacer falta más que eso).
+Abrir un issue. Si es un bug, ayuda mucho incluir cómo reproducirlo — para
+el motor de un juego, lo ideal es un test que falle (el motor es una
+función pura, no debería hacer falta más que eso).
