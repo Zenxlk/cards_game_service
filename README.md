@@ -55,10 +55,10 @@ acción, devuelve el estado siguiente más los eventos que produjo. Sin I/O, sin
 goroutines propias — eso lo hace trivial de testear y es lo que le permite a
 `room` correr cualquier juego sin conocer sus reglas.
 
-Si querés el detalle de cómo se llegó a este diseño (por qué `lobby` es tan
-chico, por qué las ventanas de reacción con timer viven en `room` y no en el
+El detalle de cómo se llegó a este diseño (por qué `lobby` es tan chico,
+por qué las ventanas de reacción con timer viven en `room` y no en el
 motor, qué información oculta un juego con manos privadas como Exploding
-Kittens), está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Kittens) está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Uso rápido
 
@@ -99,13 +99,14 @@ reales (`test/integration/`).
 
 ## Agregar un juego nuevo
 
-1. Creá un paquete en `games/<tu-juego>/` que implemente `engine.GameEngine`
-   ([firma completa acá](pkg/engine/engine.go)).
-2. Registralo en un `init()`: `engine.Register("tu-juego", NewEngine)`.
-3. Importalo con blank import en `cmd/server/main.go` (`_ "github.com/ZenXLK/cards_game_service/games/tu-juego"`).
+1. Crear un paquete en `games/<nombre-del-juego>/` que implemente
+   `engine.GameEngine` ([firma completa](pkg/engine/engine.go)).
+2. Registrarlo en un `init()`: `engine.Register("nombre-del-juego", NewEngine)`.
+3. Importarlo con blank import en `cmd/server/main.go`
+   (`_ "github.com/ZenXLK/cards_game_service/games/nombre-del-juego"`).
 
-Nada más — `room`, `lobby` y `transport` no necesitan saber que tu juego
-existe.
+Nada más — `room`, `lobby` y `transport` no necesitan saber qué juegos
+existen.
 
 ## Despliegue
 
