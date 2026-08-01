@@ -458,13 +458,19 @@ func (r *Room) onLeave(playerID engine.PlayerID) {
 	r.broadcastRoomState()
 }
 
+// onStartGame también atiende la revancha: un start_game con la sala en
+// phaseFinished es exactamente lo mismo que arrancar la partida original
+// (mismo roster de r.lobby, mismo canStart), solo que reemplaza un motor ya
+// terminado en vez de crear el primero — por eso no hace falta un tipo de
+// mensaje nuevo para "revancha", el cliente manda el mismo start_game de
+// siempre y el servidor decide solo con la fase actual.
 func (r *Room) onStartGame(c *Conn) {
 	playerID, ok := r.playerFor(c)
 	if !ok || playerID != r.hostID {
 		r.sendErrorTo(c, "Solo el host puede empezar la partida")
 		return
 	}
-	if r.phase != phaseWaiting {
+	if r.phase != phaseWaiting && r.phase != phaseFinished {
 		return
 	}
 	if !r.canStart() {
@@ -498,6 +504,10 @@ func (r *Room) onStartGame(c *Conn) {
 	r.phase = phaseActive
 	r.timers.cancelLobbyIdle()
 	r.matchID = store.NewMatchID()
+	// Sin esto, una revancha nunca se registraría al terminar: el flag
+	// queda en true desde finalizeMatch() de la partida anterior, y
+	// finalizeMatch() no hace nada si ya está en true (ver su propio guard).
+	r.matchFinalized = false
 	r.cfg.Store.RecordMatchStart(r.matchID, r.id, r.gameType)
 	r.broadcast("game_starting", nil)
 	r.broadcastState()
@@ -560,6 +570,20 @@ func (r *Room) onDisconnect(c *Conn) {
 		}
 		return
 	}
+
+	// Terminada la partida, puede haber una revancha esperando (ver
+	// onStartGame) — un corte de conexión acá no debería sacar a nadie de
+	// r.lobby ni, si es el host, cerrar la sala entera (onLeave hace las
+	// dos cosas). Solo se libera la conexión; si vuelve, onJoin ya sabe
+	// reconocerlo como jugador conocido y reponerle su lugar. Sin motor
+	// activo del que "eliminarlo", no aplica el mismo grace period que en
+	// phaseActive — si nunca vuelve, la sala igual se cierra sola cuando
+	// no quede ninguna conexión (ver el chequeo al final de Run()).
+	if r.phase == phaseFinished {
+		delete(r.clients, playerID)
+		return
+	}
+
 	r.onLeave(playerID)
 }
 
