@@ -7,6 +7,21 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 Motor de reglas de Exploding Kittens: casos límite adicionales.
 
+## [0.4.0] - 2026-08-01
+
+### Agregado
+
+- Revancha online: `start_game` ahora también acepta la sala en fase
+  `finished`, reutilizando el mismo roster para arrancar una partida
+  nueva en vez de requerir un mensaje separado. `onDisconnect` suma un
+  tercer camino para esta fase (solo libera la conexión, sin expulsar a
+  nadie del roster ni cerrar la sala).
+- `View.PlayerView` expone `HiddenHandIds` (solo id de carta, sin tipo)
+  para la mano rival cuando el propio jugador tiene un trío de gatos
+  pendiente de resolver a ciegas — es lo que le faltaba al cliente online
+  para poder armar la acción de elegir carta; ningún otro momento del
+  juego revela nada nuevo de una mano ajena.
+
 ## [0.3.0] - 2026-07-29
 
 ### Agregado
@@ -116,7 +131,8 @@ punta a punta.
 - Tests unitarios del motor (RNG determinista, sin mocks) y un test de
   integración con servidor HTTP real + clientes WebSocket reales.
 
-[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.0...v0.1.1
