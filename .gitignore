@@ -19,3 +19,6 @@
 
 # Configuración local de Claude Code (no compartida)
 .claude/settings.local.json
+
+# Registro local de pendientes de verificación (nunca se sube)
+PENDIENTES_LOCAL.md
