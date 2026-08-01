@@ -5,6 +5,16 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Agregado
+
+- Rate limit por IP en todas las rutas HTTP (`internal/transport/ratelimit.go`,
+  `golang.org/x/time/rate`) y un techo global de salas activas
+  (`lobby.Config.MaxRooms`, `MAX_ROOMS`) — `POST /rooms` no requiere
+  autenticación y cada sala es un goroutine con su propio estado, así que
+  sin estos límites una ráfaga de requests podía agotar la memoria de un
+  proceso con recursos acotados. Detalle en
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#límites-contra-abuso).
+
 Motor de reglas de Exploding Kittens: casos límite adicionales.
 
 ## [0.4.0] - 2026-08-01

@@ -136,6 +136,27 @@ Dos garantías que no son obvias mirando `internal/room/room.go` en diagonal:
   El timer se cancela apenas la partida arranca (`onStartGame`); a partir
   de ahí el ciclo de vida pasa a regirse por el grace period de reconexión.
 
+## Límites contra abuso
+
+`POST /rooms` no requiere autenticación (por diseño: cualquiera puede
+crear una sala) y cada sala es un goroutine propio con su estado — sin
+ningún límite, una ráfaga de requests (maliciosa o no) puede agotar la
+memoria de un proceso con recursos acotados antes de que
+`LobbyIdleTimeout` llegue a limpiar nada. Dos capas, complementarias:
+
+- **Rate limit por IP** (`internal/transport/ratelimit.go`), aplicado a
+  todas las rutas HTTP por igual — nunca a los mensajes dentro de una
+  partida ya conectada, esos van por el canal propio de la sala. La IP se
+  toma de `X-Forwarded-For` si está presente; esto asume que el puerto de
+  la app solo es alcanzable a través de un proxy de confianza (ver
+  `docs/DEPLOYMENT.md`), porque cualquiera con acceso directo al puerto
+  podría falsear ese header y esquivar el límite.
+- **Techo global de salas activas** (`lobby.Config.MaxRooms`,
+  `MAX_ROOMS` como variable de entorno): el rate limit frena a una sola
+  fuente, pero no evita que muchas fuentes distintas, cada una por
+  debajo del límite individual, sumen igual demasiadas salas — este techo
+  sí lo hace, sin importar de dónde vengan las requests.
+
 ## Despliegue
 
 El estado de cada sala vive en memoria de un único proceso — no hay base de
