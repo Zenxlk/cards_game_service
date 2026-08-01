@@ -9,6 +9,7 @@ package lobby
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -18,9 +19,20 @@ import (
 
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // sin I/O/0/1: ambiguos al leerlos en voz alta
 
+// ErrTooManyRooms se devuelve cuando la cantidad de salas activas alcanza
+// Config.MaxRooms. Cada sala es un goroutine propio con su estado — sin
+// este techo, una ráfaga de POST /rooms (maliciosa o no) puede agotar la
+// memoria de un proceso con recursos acotados (p. ej. una VM chica) antes
+// de que LobbyIdleTimeout llegue a limpiar nada.
+var ErrTooManyRooms = errors.New("lobby: límite de salas activas alcanzado")
+
 type Config struct {
 	CodeLength int
 	Room       room.Config
+
+	// MaxRooms acota cuántas salas pueden existir a la vez en el proceso.
+	// 0 significa sin límite — pensado para tests, no para producción.
+	MaxRooms int
 }
 
 type Lobby struct {
@@ -50,6 +62,14 @@ func (l *Lobby) CreateRoom(ctx context.Context, gameType string, host engine.Pla
 	r := room.New(code, gameType, host, l.cfg.Room)
 
 	l.mu.Lock()
+	// Chequeado y aplicado bajo el mismo lock que la inserción: si se
+	// separara en dos secciones, dos CreateRoom concurrentes podrían leer
+	// "hay lugar" antes de que cualquiera inserte y las dos pasar, superando
+	// MaxRooms.
+	if l.cfg.MaxRooms > 0 && len(l.rooms) >= l.cfg.MaxRooms {
+		l.mu.Unlock()
+		return nil, "", ErrTooManyRooms
+	}
 	l.rooms[code] = r
 	l.mu.Unlock()
 

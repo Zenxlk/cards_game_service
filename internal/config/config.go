@@ -6,6 +6,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -37,6 +38,13 @@ type Config struct {
 	// partidas y auditoría. Vacío (default) significa "sin persistencia
 	// configurada": el server funciona igual, solo sin historial ni tops.
 	DatabaseURL string
+
+	// MaxRooms acota cuántas salas pueden existir a la vez en el proceso —
+	// cada una es un goroutine con su propio estado, así que es el techo
+	// real contra un POST /rooms sostenido (malicioso o no) agotando la
+	// memoria disponible. El default asume una instancia chica (p. ej. una
+	// VM e2-micro con 1 GiB); en una instancia más grande conviene subirlo.
+	MaxRooms int
 }
 
 func Default() Config {
@@ -52,5 +60,18 @@ func Default() Config {
 		LobbyIdleTimeout:  10 * time.Minute,
 		SupabaseJWKSURL:   os.Getenv("SUPABASE_JWKS_URL"),
 		DatabaseURL:       os.Getenv("DATABASE_URL"),
+		MaxRooms:          intEnv("MAX_ROOMS", 200),
 	}
+}
+
+func intEnv(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }

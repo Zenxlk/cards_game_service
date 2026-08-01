@@ -20,6 +20,17 @@ import (
 	"github.com/ZenXLK/cards_game_service/pkg/engine"
 )
 
+// rateLimitPerSecond y rateLimitBurst rigen el límite por IP aplicado a
+// todas las rutas (ver rateLimitMiddleware) — generoso para un cliente
+// legítimo (crear una sala, reconectar unas veces seguidas), restrictivo
+// contra una ráfaga automatizada. No configurable por env var a propósito:
+// el techo real contra un ataque sostenido es lobby.Config.MaxRooms, esto
+// es la primera línea de contención, no necesita ajuste por instancia.
+const (
+	rateLimitPerSecond = 5
+	rateLimitBurst     = 10
+)
+
 type Config struct {
 	ReadLimit int64
 
@@ -48,13 +59,14 @@ type Server struct {
 	// ctx es el contexto de vida del PROCESO, no de un request HTTP en
 	// particular: las salas que arrancan acá deben sobrevivir a la request
 	// que las creó. Nunca pasar r.Context() a lobby.CreateRoom.
-	ctx   context.Context
-	lobby *lobby.Lobby
-	cfg   Config
+	ctx     context.Context
+	lobby   *lobby.Lobby
+	cfg     Config
+	limiter *ipRateLimiter
 }
 
 func NewServer(ctx context.Context, l *lobby.Lobby, cfg Config) *Server {
-	return &Server{ctx: ctx, lobby: l, cfg: cfg}
+	return &Server{ctx: ctx, lobby: l, cfg: cfg, limiter: newIPRateLimiter(rateLimitPerSecond, rateLimitBurst)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -65,7 +77,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /players/{id}", s.handleGetPlayer)
 	mux.HandleFunc("PATCH /players/{id}/nickname", s.handleUpdateNickname)
 	mux.HandleFunc("GET /leaderboard", s.handleLeaderboard)
-	return mux
+	return rateLimitMiddleware(s.limiter, mux)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -108,6 +120,11 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 
 	host := engine.PlayerInfo{ID: engine.PlayerID(req.HostID), Name: req.HostName}
 	_, code, err := s.lobby.CreateRoom(s.ctx, req.GameType, host)
+	if errors.Is(err, lobby.ErrTooManyRooms) {
+		http.Error(w, "el servidor está al límite de salas activas, probá de nuevo en un rato", http.StatusServiceUnavailable)
+		s.cfg.Store.RecordAuditEvent("", nil, "create_room_rejected_max_rooms", nil)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

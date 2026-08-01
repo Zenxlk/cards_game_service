@@ -58,6 +58,7 @@ func main() {
 
 	l := lobby.New(lobby.Config{
 		CodeLength: cfg.RoomCodeLength,
+		MaxRooms:   cfg.MaxRooms,
 		Room: room.Config{
 			MaxPlayers:       cfg.MaxPlayersPerRoom,
 			GraceDuration:    cfg.GraceDuration,
