@@ -42,8 +42,16 @@ type PlayerView struct {
 	HandSize int             `json:"handSize"`
 	// Hand solo se completa para el propio viewer; para el resto queda nil
 	// y solo se conoce HandSize.
-	Hand   []Card       `json:"hand,omitempty"`
-	Status PlayerStatus `json:"status"`
+	Hand []Card `json:"hand,omitempty"`
+	// HiddenHandIds: excepción puntual a la regla de arriba — el id (sin
+	// type) de cada carta de esta mano, sin revelar cuál es cuál. Solo se
+	// completa cuando el viewer tiene un trío de gatos pendiente contra
+	// este jugador (ver blindCatTrioTarget) — es la única acción que
+	// necesita un cardId real de una mano ajena para resolverse
+	// (stealChosenCard busca por ID exacto en process.go); sin esto, el
+	// cliente online no tenía forma de armar un ChooseCardAction válido.
+	HiddenHandIds []string     `json:"hiddenHandIds,omitempty"`
+	Status        PlayerStatus `json:"status"`
 }
 
 type PendingActionView struct {
@@ -53,11 +61,16 @@ type PendingActionView struct {
 }
 
 func newView(s State, viewer engine.PlayerID) View {
+	blindPickTarget := blindCatTrioTarget(s, viewer)
+
 	players := make([]PlayerView, len(s.Players))
 	for i, p := range s.Players {
 		pv := PlayerView{ID: p.ID, Name: p.Name, HandSize: len(p.Hand), Status: p.Status}
-		if p.ID == viewer {
+		switch {
+		case p.ID == viewer:
 			pv.Hand = append([]Card{}, p.Hand...)
+		case blindPickTarget != "" && p.ID == blindPickTarget:
+			pv.HiddenHandIds = handIDs(p.Hand)
 		}
 		players[i] = pv
 	}
@@ -94,4 +107,26 @@ func newView(s State, viewer engine.PlayerID) View {
 	}
 
 	return view
+}
+
+// blindCatTrioTarget devuelve el ID del jugador cuya mano "viewer" puede
+// elegir a ciegas ahora mismo (trío de gatos pendiente, viewer es quien
+// elige) — "" si no aplica ninguno. Ver el comentario de HiddenHandIds.
+func blindCatTrioTarget(s State, viewer engine.PlayerID) engine.PlayerID {
+	if s.Turn.Phase != TurnAwaitingCardChoice {
+		return ""
+	}
+	pa, ok := s.PendingAction.(TurnAction)
+	if !ok || pa.Type != ActionPlayCatTrio || pa.PlayerID != viewer {
+		return ""
+	}
+	return pa.Target()
+}
+
+func handIDs(hand []Card) []string {
+	ids := make([]string, len(hand))
+	for i, c := range hand {
+		ids[i] = c.ID
+	}
+	return ids
 }
