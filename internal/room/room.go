@@ -510,6 +510,12 @@ func (r *Room) onStartGame(c *Conn) {
 	r.matchFinalized = false
 	r.cfg.Store.RecordMatchStart(r.matchID, r.id, r.gameType)
 	r.broadcast("game_starting", nil)
+	// Sin esto, ningún cliente recibe un room_state con status:"starting" —
+	// LobbyScreen (lado Flutter) navega a la partida exclusivamente al ver
+	// ese status, así que sin este broadcast la sala queda trabada hasta que
+	// una acción no relacionada (ej. set_ready) dispare uno de casualidad.
+	// Mismo patrón que WsServer._onStartGame en el cliente LAN.
+	r.broadcastRoomState()
 	r.broadcastState()
 }
 
