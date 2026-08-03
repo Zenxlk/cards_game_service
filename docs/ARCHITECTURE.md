@@ -81,6 +81,23 @@ Del lado del cliente, la reconexión es responsabilidad suya: reintentar la
 conexión WebSocket con backoff exponencial y volver a mandar `join_room` con
 el mismo `playerId`.
 
+**Eventos de conectividad, genéricos para cualquier juego.** Además de lo
+que cada motor decida hacer con el estado (`MarkPlayerDisconnected` /
+`MarkPlayerReconnected` / `EliminateForDisconnect`), `room` transmite tres
+eventos por broadcast que no dependen de ningún motor concreto —
+`{"type": "player_disconnected", "playerId": "..."}`,
+`{"type": "player_reconnected", "playerId": "..."}` y
+`{"type": "player_disconnect_timeout", "playerId": "..."}` (este último
+cuando el grace period expira sin que el jugador vuelva). Antes de esto, si
+un motor no emitía nada por su cuenta, los demás jugadores no tenían forma
+de enterarse de que alguien se cayó — quedaba librado a que cada juego se
+acordara de implementarlo. `player_reconnected` solo se manda si hubo un
+grace period real corriendo (`timerSet.cancelDisconnect` lo confirma):
+la primera conexión de un jugador pasa por el mismo camino de código que
+una reconexión (su `playerId` ya está en `r.lobby` desde `room.New`), y sin
+ese chequeo se emitiría el evento como si hubiera estado desconectado sin
+haberlo estado nunca.
+
 `join_room` con un `playerId` ya conocido no se acepta a ciegas: la
 primera conexión que reclama un `playerId` recibe un token de sesión
 opaco (`session_token`, dirigido, nunca por broadcast); cualquier

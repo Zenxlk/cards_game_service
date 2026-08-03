@@ -564,6 +564,12 @@ func (r *Room) onDisconnect(c *Conn) {
 
 	if r.phase == phaseActive {
 		delete(r.clients, playerID)
+		// Genérico y garantizado para cualquier motor, a diferencia de los
+		// eventos que el propio motor decida emitir vía MarkPlayerDisconnected
+		// (esos son opcionales y dependen de cada juego) — el cliente puede
+		// mostrar "Fulano se desconectó" sin que ese juego en particular lo
+		// haya implementado.
+		r.broadcast("player_disconnected", map[string]string{"playerId": string(playerID)})
 		r.timers.trackDisconnect(playerID, r.cfg.GraceDuration, func() {
 			r.enqueue(func(r *Room) { r.onGraceExpired(playerID) })
 		})
@@ -594,7 +600,15 @@ func (r *Room) onDisconnect(c *Conn) {
 }
 
 func (r *Room) onPlayerReconnected(playerID engine.PlayerID) {
-	r.timers.cancelDisconnect(playerID)
+	// Solo hubo grace period real si cancelDisconnect confirma que había
+	// uno corriendo — sin este chequeo, la primera conexión de un jugador
+	// (pasa por acá porque su playerId ya está en r.lobby desde
+	// room.New) o una confirmación redundante del cliente (ver el caso
+	// "player_reconnected" en dispatch) emitirían igual el evento, como si
+	// el jugador realmente hubiera estado caído.
+	if r.timers.cancelDisconnect(playerID) {
+		r.broadcast("player_reconnected", map[string]string{"playerId": string(playerID)})
+	}
 	if r.eng == nil || r.phase != phaseActive {
 		return
 	}
@@ -609,6 +623,10 @@ func (r *Room) onPlayerReconnected(playerID engine.PlayerID) {
 // dispara EliminateForDisconnect, igual que ReconnectionManager al agotar
 // su Timer en el original.
 func (r *Room) onGraceExpired(playerID engine.PlayerID) {
+	// Genérico, igual que player_disconnected — el jugador no volvió a
+	// tiempo es un hecho de conectividad, independiente de qué consecuencia
+	// tenga en las reglas del juego (eso lo decide EliminateForDisconnect).
+	r.broadcast("player_disconnect_timeout", map[string]string{"playerId": string(playerID)})
 	if r.eng == nil {
 		return
 	}
