@@ -5,6 +5,10 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+Motor de reglas de Exploding Kittens: casos límite adicionales.
+
+## [0.5.0] - 2026-08-02
+
 ### Agregado
 
 - Rate limit por IP en todas las rutas HTTP (`internal/transport/ratelimit.go`,
@@ -22,8 +26,6 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
   `room_state` con `status: "starting"` y el lobby quedaba trabado hasta
   que una acción no relacionada (ej. `set_ready`) disparara ese broadcast
   de casualidad. Afectaba tanto al arranque inicial como a la revancha.
-
-Motor de reglas de Exploding Kittens: casos límite adicionales.
 
 ## [0.4.0] - 2026-08-01
 
@@ -149,7 +151,8 @@ punta a punta.
 - Tests unitarios del motor (RNG determinista, sin mocks) y un test de
   integración con servidor HTTP real + clientes WebSocket reales.
 
-[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ZenXLK/cards_game_service/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ZenXLK/cards_game_service/compare/v0.1.1...v0.2.0
