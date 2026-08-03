@@ -15,6 +15,14 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
   proceso con recursos acotados. Detalle en
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#límites-contra-abuso).
 
+### Corregido
+
+- `onStartGame` ahora también manda `broadcastRoomState()` (además de
+  `game_starting` y `game_state`) — sin esto, ningún cliente recibía un
+  `room_state` con `status: "starting"` y el lobby quedaba trabado hasta
+  que una acción no relacionada (ej. `set_ready`) disparara ese broadcast
+  de casualidad. Afectaba tanto al arranque inicial como a la revancha.
+
 Motor de reglas de Exploding Kittens: casos límite adicionales.
 
 ## [0.4.0] - 2026-08-01
