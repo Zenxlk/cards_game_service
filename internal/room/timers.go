@@ -35,12 +35,18 @@ func (t *timerSet) trackDisconnect(playerID engine.PlayerID, d time.Duration, on
 }
 
 // cancelDisconnect cancela el grace period de playerID si había uno
-// corriendo (reconectó a tiempo). No hace nada si no había ninguno pendiente.
-func (t *timerSet) cancelDisconnect(playerID engine.PlayerID) {
-	if existing, ok := t.reconnect[playerID]; ok {
-		existing.Stop()
-		delete(t.reconnect, playerID)
+// corriendo (reconectó a tiempo). Devuelve si realmente había uno pendiente
+// — Room lo usa para no confundir una reconexión genuina con la primera
+// conexión de un jugador o una confirmación redundante del cliente, que
+// también pasan por acá pero nunca tuvieron un grace period activo.
+func (t *timerSet) cancelDisconnect(playerID engine.PlayerID) bool {
+	existing, ok := t.reconnect[playerID]
+	if !ok {
+		return false
 	}
+	existing.Stop()
+	delete(t.reconnect, playerID)
+	return true
 }
 
 // setReaction reprograma el timer de la ventana de reacción del motor: cada

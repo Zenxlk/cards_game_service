@@ -5,6 +5,16 @@ versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Agregado
+
+- Eventos de conectividad genéricos por broadcast, sin depender de ningún
+  motor concreto: `player_disconnected`, `player_reconnected` y
+  `player_disconnect_timeout` (grace period expirado). Antes, que los
+  demás jugadores se enteraran de que alguien se cayó dependía de que ese
+  juego en particular emitiera algo por su cuenta — ahora es una garantía
+  de `internal/room`, igual para cualquier motor. Detalle en
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#reconexión).
+
 Motor de reglas de Exploding Kittens: casos límite adicionales.
 
 ## [0.5.0] - 2026-08-02

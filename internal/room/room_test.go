@@ -137,6 +137,9 @@ func joinFrameWithAuth(playerID, name, authToken string) Frame {
 	return Frame{Type: "join_room", Raw: raw}
 }
 
+// joinFrameWithToken y sessionTokenPayload están en rematch_test.go —
+// reutilizados acá tal cual, mismo contrato de reconexión.
+
 // testAuthFixture levanta un servidor JWKS real (httptest) respaldado por un
 // único secreto HMAC, y expone auth.NewVerifier apuntando a él — así se
 // prueba el mismo camino de red que usa producción, sin pegarle a Supabase.
@@ -578,4 +581,143 @@ func TestFinalizeMatch_SetsFlagOnCrashDuringActiveMatch(t *testing.T) {
 	if !r.matchFinalized {
 		t.Fatal("esperaba matchFinalized=true tras el cierre por panic (abandoned)")
 	}
+}
+
+// setUpActiveGameWithTwoPlayers arma una sala con host+invitado, ambos
+// listos y la partida arrancada — punto de partida común para los tests de
+// eventos de conectividad, que necesitan phaseActive (el grace period solo
+// existe ahí, ver onDisconnect).
+func setUpActiveGameWithTwoPlayers(t *testing.T, roomID string) (r *Room, hostConn, guestConn *Conn, guestToken string) {
+	t.Helper()
+	host := engine.PlayerInfo{ID: "p1", Name: "Ana"}
+	r = New(roomID, "room_test_panicky", host, Config{MaxPlayers: 2, GraceDuration: time.Hour})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	go r.Run(ctx)
+
+	hostConn = r.Connect()
+	r.HandleMessage(hostConn, joinFrame("p1", "Ana"))
+	drainUntil(t, hostConn, "room_state")
+
+	guestConn = r.Connect()
+	r.HandleMessage(guestConn, joinFrame("p2", "Beto"))
+	tokenFrame := drainUntil(t, guestConn, "session_token")
+	var tokenPayload sessionTokenPayload
+	if err := json.Unmarshal(tokenFrame.Raw, &tokenPayload); err != nil {
+		t.Fatalf("no se pudo decodificar el session_token del invitado: %v", err)
+	}
+	guestToken = tokenPayload.Token
+	drainUntil(t, guestConn, "room_state")
+	drainUntil(t, hostConn, "room_state")
+
+	r.HandleMessage(guestConn, Frame{Type: "set_ready", Raw: json.RawMessage(`{"ready":true}`)})
+	drainUntil(t, guestConn, "room_state")
+	drainUntil(t, hostConn, "room_state")
+
+	r.HandleMessage(hostConn, Frame{Type: "start_game"})
+	drainUntil(t, hostConn, "game_starting")
+	drainUntil(t, guestConn, "game_starting")
+
+	return r, hostConn, guestConn, guestToken
+}
+
+func TestOnDisconnectAndReconnect_BroadcastGenericConnectivityEvents(t *testing.T) {
+	r, hostConn, guestConn, guestToken := setUpActiveGameWithTwoPlayers(t, "ROOM12")
+
+	r.HandleDisconnect(guestConn)
+
+	f := drainUntil(t, hostConn, "player_disconnected")
+	var payload struct {
+		PlayerID string `json:"playerId"`
+	}
+	if err := json.Unmarshal(f.Raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.PlayerID != "p2" {
+		t.Fatalf("playerId inesperado en player_disconnected: %q", payload.PlayerID)
+	}
+
+	reconnectedConn := r.Connect()
+	r.HandleMessage(reconnectedConn, joinFrameWithToken("p2", "Beto", guestToken))
+	drainUntil(t, reconnectedConn, "room_state")
+
+	f2 := drainUntil(t, hostConn, "player_reconnected")
+	var payload2 struct {
+		PlayerID string `json:"playerId"`
+	}
+	if err := json.Unmarshal(f2.Raw, &payload2); err != nil {
+		t.Fatal(err)
+	}
+	if payload2.PlayerID != "p2" {
+		t.Fatalf("playerId inesperado en player_reconnected: %q", payload2.PlayerID)
+	}
+}
+
+func TestOnGraceExpired_BroadcastsPlayerDisconnectTimeout(t *testing.T) {
+	host := engine.PlayerInfo{ID: "p1", Name: "Ana"}
+	r := New("ROOM13", "room_test_panicky", host, Config{MaxPlayers: 2, GraceDuration: 20 * time.Millisecond})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go r.Run(ctx)
+
+	hostConn := r.Connect()
+	r.HandleMessage(hostConn, joinFrame("p1", "Ana"))
+	drainUntil(t, hostConn, "room_state")
+
+	guestConn := r.Connect()
+	r.HandleMessage(guestConn, joinFrame("p2", "Beto"))
+	drainUntil(t, guestConn, "room_state")
+	drainUntil(t, hostConn, "room_state")
+
+	r.HandleMessage(guestConn, Frame{Type: "set_ready", Raw: json.RawMessage(`{"ready":true}`)})
+	drainUntil(t, guestConn, "room_state")
+	drainUntil(t, hostConn, "room_state")
+
+	r.HandleMessage(hostConn, Frame{Type: "start_game"})
+	drainUntil(t, hostConn, "game_starting")
+
+	r.HandleDisconnect(guestConn)
+	drainUntil(t, hostConn, "player_disconnected")
+
+	// Nadie reconecta a p2 dentro del grace period (20ms) — debe expirar y
+	// avisar, sin depender de qué haga EliminateForDisconnect con el estado.
+	f := drainUntil(t, hostConn, "player_disconnect_timeout")
+	var payload struct {
+		PlayerID string `json:"playerId"`
+	}
+	if err := json.Unmarshal(f.Raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.PlayerID != "p2" {
+		t.Fatalf("playerId inesperado en player_disconnect_timeout: %q", payload.PlayerID)
+	}
+}
+
+// TestOnJoin_FirstConnectionNeverRegistersAGraceTimer confirma la premisa
+// de la que depende que player_reconnected no dispare en falso: la primera
+// conexión de un jugador (host incluido, que ya figura en r.lobby desde
+// New()) pasa por la misma rama de "jugador conocido" que una reconexión
+// real, pero nunca debería quedar nada en timers.reconnect — si quedara
+// algo ahí sin que hubiera existido un onDisconnect real, sería la señal de
+// que cancelDisconnect() podría devolver true por error en el próximo
+// join_room de ese jugador.
+func TestOnJoin_FirstConnectionNeverRegistersAGraceTimer(t *testing.T) {
+	host := engine.PlayerInfo{ID: "p1", Name: "Ana"}
+	r := New("ROOM14", "room_test_panicky", host, Config{MaxPlayers: 2})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go r.Run(ctx)
+
+	c := r.Connect()
+	r.HandleMessage(c, joinFrame("p1", "Ana"))
+	drainUntil(t, c, "room_state")
+
+	syncRoom(t, r, func(r *Room) {
+		if len(r.timers.reconnect) != 0 {
+			t.Fatalf("no esperaba ningún grace timer tras la primera conexión, hay %d", len(r.timers.reconnect))
+		}
+	})
 }
